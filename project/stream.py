@@ -10,9 +10,11 @@ import datetime
 import imutils
 import time
 import cv2
+import pytz
+from pytz import timezone
 from servo import Servo
 from time import sleep
-
+import numpy as np
 pan = Servo(pin=13) # pan_servo_pin (BCM)
 tilt = Servo(pin=12)
 # initialize the output frame and a lock used to ensure thread-safe
@@ -54,18 +56,55 @@ def detect_motion():
     # grab global references to the video stream, output frame, and
     # lock variables
     global vs, outputFrame, lock
-
+    # lower boundary RED color range values; Hue (0 - 10)
+    lower1 = np.array([0, 100, 20])
+    upper1 = np.array([10, 255, 255])
+    # upper boundary RED color range values; Hue (160 - 180)
+    lower2 = np.array([160,100,20])
+    upper2 = np.array([179,255,255])
     # loop over frames from the video stream
     while True:
         # read the next frame from the video stream, resize it,
         # convert the frame to grayscale, and blur it
         frame = vs.read()
-        # frame = imutils.resize(frame, width=400)
-        # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # gray = cv2.GaussianBlur(gray, (7, 7), 0)
-        # grab the current timestamp and draw it on the frame
-        timestamp = datetime.datetime.now()
         frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = imutils.resize(frame, width=600)
+        blurred = cv2.GaussianBlur(frame, (11, 11), 0)
+        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        # construct a mask for the color "green", then perform
+        # a series of dilations and erosions to remove any small
+        # blobs left in the mask
+        
+        lower_mask = cv2.inRange(hsv, lower1, upper1)
+        upper_mask = cv2.inRange(hsv, lower2, upper2)
+        mask = lower_mask + upper_mask
+        mask = cv2.erode(mask, None, iterations=2)
+        mask = cv2.dilate(mask, None, iterations=2)
+        # find contours in the mask and initialize the current
+        # (x, y) center of the ball
+        cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE)
+        cnts = imutils.grab_contours(cnts)
+        center = None
+        # only proceed if at least one contour was found
+        if len(cnts) > 0:
+            # find the largest contour in the mask, then use
+            # it to compute the minimum enclosing circle and
+            # centroid
+            c = max(cnts, key=cv2.contourArea)
+            ((x, y), radius) = cv2.minEnclosingCircle(c)
+            M = cv2.moments(c)
+            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+            # only proceed if the radius meets a minimum size
+            if radius > 10:
+                # draw the circle and centroid on the frame,
+                # then update the list of tracked points
+                cv2.circle(frame, (int(x), int(y)), int(radius),
+                    (0, 255, 255), 2)
+                cv2.circle(frame, center, 5, (0, 0, 255), -1)
+        # grab the current timestamp and draw it on the frame
+        timestamp = datetime.datetime.now(tz=pytz.utc)
+        timestamp = timestamp.astimezone(timezone('US/Pacific'))
         cv2.putText(frame, timestamp.strftime(
             "%A %d %B %Y %I:%M:%S%p"), (10, frame.shape[0] - 10),
             cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
