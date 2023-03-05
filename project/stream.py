@@ -119,19 +119,22 @@ def detect_motion():
         time_diff = current_time - last_time
         x_error_sum += x_error * time_diff
         y_error_sum += y_error * time_diff
-        tilt_angle = tilt.get_angle() + controller(0.015, 0, 0.0005,y_error, y_last_error, y_error_sum, time_diff)
+        tilt_angle = tilt.get_angle() + controller(0.8 * 0.03, 0, 0.1 * 0.03 * 0.5,y_error, y_last_error, y_error_sum, time_diff)
+        if tilt_angle > 10:
+            tilt_angle = 10
         tilt.set_angle(tilt_angle)
-        pan_angle = pan.get_angle() + controller(0.015, 0, 0.0005,x_error, x_last_error, x_error_sum, time_diff)
+        pan_angle = pan.get_angle() + controller(0.8 * 0.03, 0, 0.1 * 0.03 * 0.5,x_error, x_last_error, x_error_sum, time_diff)
         pan.set_angle(pan_angle)
         x_last_error = x_error
         y_last_error = y_error
         last_time = current_time
-        time.sleep(0.01)
 def controller(kp, ki, kd, error, last_error, error_sum, time_diff):
     error_diff = error - last_error
     derivative = error_diff / time_diff
     error_sum += error * time_diff
     integral = error_sum
+    if abs(error) < 50:
+        integral = 0
     output = kp * error + ki * integral + kd * derivative
     return output
         
